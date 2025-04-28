@@ -2,195 +2,117 @@
 
 import tkinter as tk
 from tkinter import messagebox, ttk
+import requests
+import xml.etree.ElementTree as ET
 from main import scrape_card_data
 
-# Function to fetch and display the card data
-def fetch_and_display():
-    # Disable the search button and entry while loading cards
-    search_button.config(state="disabled")
-    search_entry.config(state="disabled")
+# Store full URLs with display names
+urls = []
 
-    # Clear existing table data
+def fetch_urls():
+    try:
+        response = requests.get('https://www.tcgplayer.com/sitemap/one-piece-card-game.0.xml')
+        response.raise_for_status()
+        response.encoding = 'utf-8'
+
+        root = ET.fromstring(response.text)
+        namespaces = {'ns0': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+
+        urls.clear()
+        for url in root.findall(".//ns0:url", namespaces=namespaces):
+            loc = url.find("ns0:loc", namespaces=namespaces)
+            if loc is not None:
+                url_text = loc.text
+                if url_text.startswith("https://www.tcgplayer.com/categories/trading-and-collectible-card-games/one-piece-card-game/price-guides/"):
+                    card_name = url_text.split("/")[-1]
+                    urls.append((url_text, card_name))
+
+        for row in url_tree.get_children():
+            url_tree.delete(row)
+
+        for full_url, card_name in urls:
+            url_tree.insert("", "end", values=(card_name,))
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to fetch URLs: {e}")
+
+def select_url(event):
+    selected_item = url_tree.selection()
+    if selected_item:
+        selected_card_name = url_tree.item(selected_item[0])['values'][0]
+        selected_full_url = None
+        for full_url, name in urls:
+            if name == selected_card_name:
+                selected_full_url = full_url
+                break
+        if selected_full_url:
+            print(f"Selected URL: {selected_full_url}")
+            card_data = scrape_card_data(selected_full_url)
+            display_cards(card_data)
+
+def display_cards(cards):
     for row in tree.get_children():
         tree.delete(row)
+    if cards:
+        for index, line in enumerate(cards):
+            if " | Card #:" in line and " | Price:" in line:
+                name_part = line.split(" | Card #:")[0]
+                card_num = line.split(" | Card #:")[1].split(" | Price:")[0]
+                price = line.split(" | Price:")[1].strip()
 
-    try:
-        # Scrape the data once and store it in the cache
-        cards = scrape_card_data()
-
-        if cards:
-            # Insert rows into the table
-            for index, line in enumerate(cards):
-                if " | Card #:" in line and " | Price:" in line:
-                    name_part = line.split(" | Card #:")[0]
-                    card_num = line.split(" | Card #:")[1].split(" | Price:")[0]
-                    price = line.split(" | Price:")[1].strip()
-
-                    # Clean up the price string: remove dollar sign and any non-numeric characters except '.'
-                    price_cleaned = price.replace('$', '').strip()
-
-                    try:
-                        # Try to convert price to float
-                        price_value = float(price_cleaned)
-                    except ValueError:
-                        price_value = 0.00  # Default to 0.00 if price is invalid
-                    
-                    # Apply price coloring based on value
-                    price_color = "green" if price_value > 1 else "red"
-                    
-                    # Insert row in the table
-                    row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
-                    tree.insert("", "end", values=(name_part, card_num, price), tags=(row_tag,))
-                    
-                    # Apply price color
-                    tree.tag_configure('price', foreground=price_color)
-
-            # Enable the search bar and button after loading cards
-            search_button.config(state="normal")
-            search_entry.config(state="normal")
-        else:
-            messagebox.showinfo("Info", "No cards found.")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to load cards: {e}")
-
-# Function to search and filter cards
-def search_cards():
-    search_term = search_var.get().lower()
-
-    # Clear existing table data
-    for row in tree.get_children():
-        tree.delete(row)
-
-    try:
-        # Scrape the data again each time a search is performed
-        cards = scrape_card_data()
-
-        if cards:
-            for index, line in enumerate(cards):
-                if " | Card #:" in line and " | Price:" in line:
-                    name_part = line.split(" | Card #:")[0]
-                    card_num = line.split(" | Card #:")[1].split(" | Price:")[0]
-                    price = line.split(" | Price:")[1].strip()
-
-                    # Clean up the price string: remove dollar sign and any non-numeric characters except '.'
-                    price_cleaned = price.replace('$', '').strip()
-
-                    try:
-                        # Try to convert price to float
-                        price_value = float(price_cleaned)
-                    except ValueError:
-                        price_value = 0.00  # Default to 0.00 if price is invalid
-
-                    # If the search term matches the card name or card number, display it
-                    if search_term in name_part.lower() or search_term in card_num:
-                        # Apply price coloring based on value
-                        price_color = "green" if price_value > 1 else "red"
-                        
-                        # Insert row in the table
-                        row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
-                        tree.insert("", "end", values=(name_part, card_num, price), tags=(row_tag,))
-                        
-                        # Apply price color
-                        tree.tag_configure('price', foreground=price_color)
-        else:
-            messagebox.showinfo("Info", "No cards found.")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to load cards: {e}")
-
-# Function to sort the table by column
-def sort_column(treeview, column, reverse=False):
-    # Get all items in the treeview
-    data = [(treeview.item(item)["values"], item) for item in treeview.get_children()]
-
-    # Sort data based on the specified column (0 for Card Name, 1 for Card #, 2 for Price)
-    if column == 2:  # Sorting by price
-        data.sort(key=lambda x: float(x[0][column].replace('$', '').strip()), reverse=reverse)
+                price_cleaned = price.replace('$', '').strip()
+                try:
+                    price_value = float(price_cleaned)
+                except ValueError:
+                    price_value = 0.00
+                row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
+                tree.insert("", "end", values=(name_part, card_num, price), tags=(row_tag,))
     else:
-        data.sort(key=lambda x: x[0][column], reverse=reverse)
+        messagebox.showinfo("Info", "No cards found.")
 
-    # Reinsert the sorted data into the treeview
-    for index, (values, item) in enumerate(data):
-        treeview.item(item, values=values)
-
-    # Return the reverse flag for toggling sort order
-    return not reverse
-
-# Create main window
+# GUI setup
 root = tk.Tk()
 root.title("One Piece Card Price Viewer")
 root.geometry("850x600")
-root.resizable(True, True)
+root.configure(bg='#F0F8FF')
 
-# Set background color
-root.configure(bg='#F0F8FF')  # Light blue background
+frame_urls = tk.Frame(root)
+frame_urls.pack(fill="both", expand=True, padx=10, pady=10)
 
-# Scrape button with custom style
-scrape_button = tk.Button(root, text="Load Card Prices", font=('Arial', 14, 'bold'),
-                          bg='#4CAF50', fg='white', relief="flat", height=2, width=20,
-                          command=fetch_and_display)
-scrape_button.pack(pady=20)
+url_columns = ("URLs",)
+url_tree = ttk.Treeview(frame_urls, columns=url_columns, show="headings", height=10)
+url_tree.pack(side="left", fill="both", expand=True)
 
-# Hover effect for the button (requires tkinter's event binding)
-def on_enter(e):
-    scrape_button['bg'] = '#45a049'
+url_tree_scroll = tk.Scrollbar(frame_urls, orient="vertical", command=url_tree.yview)
+url_tree_scroll.pack(side="right", fill="y")
+url_tree.config(yscrollcommand=url_tree_scroll.set)
 
-def on_leave(e):
-    scrape_button['bg'] = '#4CAF50'
+url_tree.column("URLs", width=800, anchor="w")
+url_tree.heading("#1", text="URLs", anchor="w")
 
-scrape_button.bind("<Enter>", on_enter)
-scrape_button.bind("<Leave>", on_leave)
+url_tree.bind("<<TreeviewSelect>>", select_url)
 
-# Search bar to filter results
-search_var = tk.StringVar()
-
-# Search label, entry, and button
-search_label = tk.Label(root, text="Search Card:", font=('Arial', 12), bg='#F0F8FF')
-search_entry = tk.Entry(root, textvariable=search_var, font=('Arial', 12), width=25)
-search_button = tk.Button(root, text="Search", font=('Arial', 12, 'bold'), bg='#2196F3', fg='white', command=search_cards)
-
-# Initially disable the search bar and button
-search_entry.config(state="disabled")
-search_button.config(state="disabled")
-
-# Pack the search widgets under the "Load Card Prices" button
-search_label.pack(pady=5)
-search_entry.pack(pady=5)
-search_button.pack(pady=10)
-
-# Frame for Treeview and Scrollbars
 frame = tk.Frame(root)
 frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-# Create treeview table with columns
 columns = ("Card Name", "Card #", "Price")
 tree = ttk.Treeview(frame, columns=columns, show="headings", height=25)
 tree.pack(side="left", fill="both", expand=True)
 
-# Scrollbar for Treeview
 tree_scroll = tk.Scrollbar(frame, orient="vertical", command=tree.yview)
 tree_scroll.pack(side="right", fill="y")
 tree.config(yscrollcommand=tree_scroll.set)
 
-# Style the treeview for better presentation
-tree.tag_configure('oddrow', background="#f0f0f0")  # Light gray for odd rows
-tree.tag_configure('evenrow', background="#ffffff")  # White for even rows
+tree.tag_configure('oddrow', background="#f0f0f0")
+tree.tag_configure('evenrow', background="#ffffff")
+
 tree.column("Card Name", width=300, anchor="w")
 tree.column("Card #", width=100, anchor="center")
 tree.column("Price", width=100, anchor="e")
 
-# Style headers
-tree.heading("#1", text="Card Name", anchor="w", command=lambda: toggle_sort(tree, 0))
-tree.heading("#2", text="Card #", anchor="w", command=lambda: toggle_sort(tree, 1))
-tree.heading("#3", text="Price", anchor="w", command=lambda: toggle_sort(tree, 2))
+tree.heading("#1", text="Card Name", anchor="w")
+tree.heading("#2", text="Card #", anchor="w")
+tree.heading("#3", text="Price", anchor="w")
 
-# Sort state variables
-sort_reverse = {0: False, 1: False, 2: False}  # Track sort direction for each column
-
-# Function to toggle sorting direction
-def toggle_sort(treeview, column):
-    reverse = sort_reverse[column]
-    sort_reverse[column] = not reverse  # Toggle sort direction
-    sort_column(treeview, column, reverse)
-
-# Run the app
+fetch_urls()
 root.mainloop()
