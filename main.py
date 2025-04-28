@@ -1,14 +1,16 @@
 # main.py
 
-def scrape_card_data():
-    from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from webdriver_manager.chrome import ChromeDriverManager
-    import time
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+
+def scrape_card_data(url):  # ✅ URL passed from GUI
+    print(f"Scraping from: {url}")  # helpful for debugging
 
     options = Options()
     options.add_argument("--headless")
@@ -19,15 +21,12 @@ def scrape_card_data():
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     wait = WebDriverWait(driver, 10)
 
-    url = "https://www.tcgplayer.com/categories/trading-and-collectible-card-games/one-piece-card-game/price-guides/royal-blood"
     driver.get(url)
     time.sleep(5)
 
     while True:
         try:
-            load_more_btn = wait.until(EC.element_to_be_clickable((
-                By.XPATH, "//span[contains(text(), 'Load')]/ancestor::button"
-            )))
+            load_more_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Load')]/ancestor::button")))
             print("Clicking:", load_more_btn.text)
             load_more_btn.click()
             time.sleep(2)
@@ -45,7 +44,8 @@ def scrape_card_data():
                 card_number = right_cells[0].text
                 price = right_cells[1].text
                 card_data.append(f"{name} | Card #: {card_number} | Price: {price}")
-        except:
+        except Exception as e:
+            print(f"Error extracting data: {e}")
             continue
 
     driver.quit()
