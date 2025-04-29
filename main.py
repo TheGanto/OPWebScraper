@@ -43,7 +43,7 @@ def scrape_card_data(url):  # ✅ URL passed from GUI
             if len(right_cells) >= 2:
                 card_number = right_cells[0].text
                 price = right_cells[1].text
-                card_data.append(f"{name} | Card #: {card_number} | Price: {price}")
+                card_data.append((name, card_number, price))  # Now appending a tuple
         except Exception as e:
             print(f"Error extracting data: {e}")
             continue

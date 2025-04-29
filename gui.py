@@ -5,8 +5,19 @@ from tkinter import messagebox, ttk
 import requests
 import xml.etree.ElementTree as ET
 from main import scrape_card_data
+from database import init_db, save_card_data, load_cards_by_set
 
-# Store full URLs with display names
+# Dark theme color palette
+BG_COLOR = '#1e1e1e'
+TEXT_COLOR = '#ffffff'
+ROW_ODD = '#2a2a2a'
+ROW_EVEN = '#1e1e1e'
+BUTTON_BG = '#3a3a3a'
+BUTTON_HOVER = '#505050'
+
+# Initialize the database
+init_db()
+
 urls = []
 
 def fetch_urls():
@@ -40,43 +51,52 @@ def select_url(event):
     selected_item = url_tree.selection()
     if selected_item:
         selected_card_name = url_tree.item(selected_item[0])['values'][0]
-        selected_full_url = None
-        for full_url, name in urls:
-            if name == selected_card_name:
-                selected_full_url = full_url
-                break
+        selected_full_url = next((url for url, name in urls if name == selected_card_name), None)
+
         if selected_full_url:
-            print(f"Selected URL: {selected_full_url}")
-            card_data = scrape_card_data(selected_full_url)
-            display_cards(card_data)
+            cards = load_cards_by_set(selected_full_url)
+            if cards:
+                display_cards(cards)
+            else:
+                card_data = scrape_card_data(selected_full_url)
+                save_card_data(selected_full_url, selected_card_name, card_data)
+                display_cards(card_data)
 
 def display_cards(cards):
     for row in tree.get_children():
         tree.delete(row)
-    if cards:
-        for index, line in enumerate(cards):
-            if " | Card #:" in line and " | Price:" in line:
-                name_part = line.split(" | Card #:")[0]
-                card_num = line.split(" | Card #:")[1].split(" | Price:")[0]
-                price = line.split(" | Price:")[1].strip()
 
-                price_cleaned = price.replace('$', '').strip()
-                try:
-                    price_value = float(price_cleaned)
-                except ValueError:
-                    price_value = 0.00
-                row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
-                tree.insert("", "end", values=(name_part, card_num, price), tags=(row_tag,))
+    if cards:
+        for index, (name, card_num, price) in enumerate(cards):
+            row_tag = 'evenrow' if index % 2 == 0 else 'oddrow'
+            tree.insert("", "end", values=(name, card_num, price), tags=(row_tag,))
+        sort_cards_by_price()
     else:
         messagebox.showinfo("Info", "No cards found.")
+
+def sort_cards_by_price():
+    rows = [(tree.item(item)['values'][2], item) for item in tree.get_children()]
+    
+    # Update the lambda to handle commas in price strings
+    rows.sort(key=lambda x: float(x[0].replace('$', '').replace(',', '').strip()) if x[0] != 'N/A' else 0, reverse=sort_order.get())
+    
+    for index, (price, item) in enumerate(rows):
+        tree.move(item, '', index)
+
+    # Toggle sorting order
+    sort_order.set(not sort_order.get())
 
 # GUI setup
 root = tk.Tk()
 root.title("One Piece Card Price Viewer")
 root.geometry("850x600")
-root.configure(bg='#F0F8FF')
+root.configure(bg=BG_COLOR)
 
-frame_urls = tk.Frame(root)
+header = tk.Label(root, text="One Piece Card Price Viewer", font=("Helvetica", 18, "bold"), bg=BG_COLOR, fg=TEXT_COLOR)
+header.pack(pady=20)
+
+# Frame for URL Treeview
+frame_urls = tk.Frame(root, bg=BG_COLOR)
 frame_urls.pack(fill="both", expand=True, padx=10, pady=10)
 
 url_columns = ("URLs",)
@@ -91,8 +111,11 @@ url_tree.column("URLs", width=800, anchor="w")
 url_tree.heading("#1", text="URLs", anchor="w")
 
 url_tree.bind("<<TreeviewSelect>>", select_url)
+url_tree.tag_configure('oddrow', background=ROW_ODD, foreground=TEXT_COLOR)
+url_tree.tag_configure('evenrow', background=ROW_EVEN, foreground=TEXT_COLOR)
 
-frame = tk.Frame(root)
+# Frame for card details
+frame = tk.Frame(root, bg=BG_COLOR)
 frame.pack(fill="both", expand=True, padx=10, pady=10)
 
 columns = ("Card Name", "Card #", "Price")
@@ -103,8 +126,8 @@ tree_scroll = tk.Scrollbar(frame, orient="vertical", command=tree.yview)
 tree_scroll.pack(side="right", fill="y")
 tree.config(yscrollcommand=tree_scroll.set)
 
-tree.tag_configure('oddrow', background="#f0f0f0")
-tree.tag_configure('evenrow', background="#ffffff")
+tree.tag_configure('oddrow', background=ROW_ODD, foreground=TEXT_COLOR)
+tree.tag_configure('evenrow', background=ROW_EVEN, foreground=TEXT_COLOR)
 
 tree.column("Card Name", width=300, anchor="w")
 tree.column("Card #", width=100, anchor="center")
@@ -112,7 +135,31 @@ tree.column("Price", width=100, anchor="e")
 
 tree.heading("#1", text="Card Name", anchor="w")
 tree.heading("#2", text="Card #", anchor="w")
-tree.heading("#3", text="Price", anchor="w")
+tree.heading("#3", text="Price", anchor="w", command=sort_cards_by_price)
 
+# Button styling
+def style_button(button):
+    button.config(
+        font=("Helvetica", 12, "bold"),
+        bg=BUTTON_BG,
+        fg=TEXT_COLOR,
+        relief="flat",
+        height=2,
+        width=15
+    )
+    button.bind("<Enter>", lambda e: button.config(bg=BUTTON_HOVER))
+    button.bind("<Leave>", lambda e: button.config(bg=BUTTON_BG))
+
+# Refresh button
+refresh_button = tk.Button(root, text="Refresh URLs", command=fetch_urls)
+style_button(refresh_button)
+refresh_button.pack(pady=20)
+
+# Initialize sorting state
+sort_order = tk.BooleanVar(value=False)
+
+# Initial fetch
 fetch_urls()
+
+# Launch app
 root.mainloop()
